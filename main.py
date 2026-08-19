@@ -78,6 +78,7 @@ class TranscriptRequest(BaseModel):
     meeting_title: Optional[str] = "Meeting"
     meeting_date:  Optional[str] = None
     organisation:  Optional[str] = None   # falls back to cfg.ORGANISATION
+    host:          Optional[str] = None   # Host / meeting creator name
 
 # ── OpenAI system prompt ───────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ Return a single valid JSON object with EXACTLY these fields — no markdown fenc
   "meeting_date": "string",
   "duration_estimate": "string (e.g. '45 minutes')",
   "participants": [
-    {"name": "string", "role": "string", "speaking_time": "string (e.g. '~30%')"}
+    {"name": "string", "role": "HOST|PARTICIPANT", "speaking_time": "string (e.g. '~30%')"}
   ],
   "executive_summary": "string (3-5 sentences)",
   "key_decisions": ["string"],
@@ -114,12 +115,14 @@ Return a single valid JSON object with EXACTLY these fields — no markdown fenc
 }
 
 Rules:
-- Extract ALL named speakers; infer roles from context (Sales Manager, GM, Finance Director, etc.)
-- Action items must have specific owners and realistic deadlines
-- Next steps must be ordered by urgency
+- Assign participant roles strictly as either "HOST" or "PARTICIPANT". Do NOT infer job titles or position roles (such as IT Specialist, General Manager, Sales Manager, etc.).
+- If a Host is explicitly provided or identified as the person who created/initiated/led the meeting, mark their role as "HOST".
+- Set all other attendees/participants in the meeting as "PARTICIPANT".
+- Action items must have specific owners and realistic deadlines.
+- Next steps must be ordered by urgency.
 - For automotive/dealership context flag: sales figures, inventory, finance penetration,
-  service turnaround, compliance (ASIC / APPs), and campaign metrics
-- Return ONLY the raw JSON object — nothing else
+  service turnaround, compliance (ASIC / APPs), and campaign metrics.
+- Return ONLY the raw JSON object — nothing else.
 """
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -148,11 +151,13 @@ async def _analyse(req: TranscriptRequest) -> dict:
     """
     date_hint = req.meeting_date or datetime.now().strftime("%d %B %Y")
     org       = _resolve_org(req)
+    host_hint = f"\nMeeting Host: {req.host}" if req.host else ""
 
     user_msg = (
         f"Meeting Title: {req.meeting_title}\n"
         f"Meeting Date: {date_hint}\n"
-        f"Organisation: {org}\n\n"
+        f"Organisation: {org}"
+        f"{host_hint}\n\n"
         f"TRANSCRIPT:\n{req.transcript}"
     )
 
@@ -621,10 +626,12 @@ async def analyse_stream(req: TranscriptRequest):
     date_hint = req.meeting_date or datetime.now().strftime("%d %B %Y")
     org       = _resolve_org(req)
 
+    host_hint = f"\nMeeting Host: {req.host}" if req.host else ""
     user_msg = (
         f"Meeting Title: {req.meeting_title}\n"
         f"Meeting Date: {date_hint}\n"
-        f"Organisation: {org}\n\n"
+        f"Organisation: {org}"
+        f"{host_hint}\n\n"
         f"TRANSCRIPT:\n{req.transcript}"
     )
 
