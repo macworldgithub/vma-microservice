@@ -116,8 +116,9 @@ Return a single valid JSON object with EXACTLY these fields — no markdown fenc
 
 Rules:
 - Assign participant roles strictly as either "HOST" or "PARTICIPANT". Do NOT infer job titles or position roles (such as IT Specialist, General Manager, Sales Manager, etc.).
-- If a Host is explicitly provided or identified as the person who created/initiated/led the meeting, mark their role as "HOST".
-- Set all other attendees/participants in the meeting as "PARTICIPANT".
+- CRITICAL: If a "Meeting Host" is explicitly provided in the request prompt, that exact person MUST be assigned the "HOST" role. All other attendees MUST be assigned the "PARTICIPANT" role.
+- If no explicit Meeting Host is provided, identify the single primary meeting creator/initiator/host as "HOST", and set all other attendees as "PARTICIPANT".
+- There MUST be strictly exactly one "HOST" among the participants.
 - Action items must have specific owners and realistic deadlines.
 - Next steps must be ordered by urgency.
 - For automotive/dealership context flag: sales figures, inventory, finance penetration,
@@ -142,6 +143,51 @@ def _clean_json(raw: str) -> dict:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _enforce_participant_roles(data: dict, host_name: Optional[str] = None) -> None:
+    """
+    Guarantees correct participant role assignment:
+    1. If host_name is provided, matching participant gets role='HOST' and all others get 'PARTICIPANT'.
+    2. If explicit host is not found in attendee list, host_name is prepended with role='HOST'.
+    3. If host_name is not provided, strictly ONLY ONE participant gets role='HOST'.
+    """
+    participants = data.get("participants", [])
+    if not isinstance(participants, list) or not participants:
+        return
+
+    host_clean = host_name.strip().lower() if host_name and host_name.strip() else None
+
+    if host_clean:
+        matched_idx = None
+        for i, p in enumerate(participants):
+            p_name = str(p.get("name", "")).strip().lower()
+            if host_clean == p_name or host_clean in p_name or p_name in host_clean:
+                matched_idx = i
+                break
+
+        if matched_idx is not None:
+            for i, p in enumerate(participants):
+                p["role"] = "HOST" if i == matched_idx else "PARTICIPANT"
+        else:
+            participants.insert(0, {
+                "name": host_name.strip(),
+                "role": "HOST",
+                "speaking_time": "~0%"
+            })
+            for p in participants[1:]:
+                p["role"] = "PARTICIPANT"
+    else:
+        host_assigned = False
+        for p in participants:
+            if str(p.get("role", "")).upper() == "HOST" and not host_assigned:
+                p["role"] = "HOST"
+                host_assigned = True
+            else:
+                p["role"] = "PARTICIPANT"
+        
+        if not host_assigned and participants:
+            participants[0]["role"] = "HOST"
 
 
 async def _analyse(req: TranscriptRequest) -> dict:
@@ -183,6 +229,7 @@ async def _analyse(req: TranscriptRequest) -> dict:
             detail=f"Failed to parse model response as JSON: {exc} | raw snippet: {raw[:300]}",
         )
 
+    _enforce_participant_roles(data, req.host)
     data.setdefault("generated_at", _now_iso())
     data.setdefault("meeting_title", req.meeting_title)
     return data
