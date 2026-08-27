@@ -431,19 +431,17 @@ def build_pdf(data: dict, organisation: str) -> bytes:
     participants = data.get("participants", [])
     if participants:
         section("Participants")
-        c1 = CW * 0.30
-        c3 = CW * 0.20
-        c2 = CW - c1 - c3
+        c1 = CW * 0.70
+        c2 = CW - c1
         rows = [
             [Paragraph(p.get("name", "—"), sBodyBold),
-             Paragraph(p.get("role", "—"), sBody),
              Paragraph(p.get("speaking_time", "—"), sCenter)]
             for p in participants
         ]
         story.append(striped_table(
-            header=["Name", "Role", "Speaking Time"],
+            header=["Name", "Speaking Time"],
             rows=rows,
-            col_widths=[c1, c2, c3],
+            col_widths=[c1, c2],
         ))
 
     # ── 4. Key Decisions ──────────────────────────────────────────────────────
@@ -578,7 +576,7 @@ def build_text_report(data: dict, organisation: str) -> str:
     ]
     for p in data.get("participants", []):
         lines.append(
-            f"  • {p.get('name','?'):<25} {p.get('role',''):<30} {p.get('speaking_time','')}"
+            f"  • {p.get('name','?'):<35} {p.get('speaking_time','')}"
         )
 
     lines.append(section("EXECUTIVE SUMMARY"))
